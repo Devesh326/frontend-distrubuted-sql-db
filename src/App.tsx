@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { ReactFlowProvider } from 'reactflow'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -10,8 +11,10 @@ import { LogsPage } from '@/components/pages/LogsPage'
 import { SettingsPage } from '@/components/pages/SettingsPage'
 import { NodeDrawer } from '@/components/panels/NodeDrawer'
 import { CoordinatorDrawer } from '@/components/panels/CoordinatorDrawer'
+import { MetadataDrawer } from '@/components/panels/MetadataDrawer'
 import { MetricDetailModal } from '@/components/panels/MetricDetailModal'
 import { useClusterStore } from '@/store/clusterStore'
+import { connect as connectWs, disconnect as disconnectWs } from '@/services/ws'
 
 const pages: Record<string, React.FC> = {
   cluster: () => (
@@ -46,19 +49,44 @@ function PageContent({ view }: { view: string }) {
 
 function App() {
   const sidebarView = useClusterStore((s) => s.sidebarView)
+  const init = useClusterStore((s) => s.init)
+  const refreshCluster = useClusterStore((s) => s.refreshCluster)
+  const stopPolling = useClusterStore((s) => s.stopPolling)
+  const checkFreshness = useClusterStore((s) => s.checkFreshness)
+  const refreshRecovery = useClusterStore(s => s.refreshRecovery)
+
+  useEffect(() => {
+    void init()
+    void refreshRecovery()
+    connectWs()
+    return () => {
+      disconnectWs()
+      stopPolling()
+    }
+  }, [init, stopPolling, refreshRecovery])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshCluster()
+    }, 5000)
+    const freshness = setInterval(checkFreshness, 1000)
+    const recovery = setInterval(() => { void refreshRecovery() }, 3000)
+    return () => { clearInterval(interval); clearInterval(freshness); clearInterval(recovery) }
+  }, [refreshCluster, checkFreshness, refreshRecovery])
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
       <Header />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 relative">
+        <main className="flex-1 min-w-0 relative">
           <PageContent view={sidebarView} />
         </main>
       </div>
       <MetricsBar />
       <NodeDrawer />
       <CoordinatorDrawer />
+      <MetadataDrawer />
       <MetricDetailModal />
     </div>
   )

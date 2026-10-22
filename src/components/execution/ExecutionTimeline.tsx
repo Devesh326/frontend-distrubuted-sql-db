@@ -51,7 +51,7 @@ export function ExecutionTimeline() {
               isFuture && 'opacity-30'
             )}
           >
-            {isPast && <CheckCircle2 size={12} className="text-green-500 shrink-0" />}
+            {isPast && <CheckCircle2 size={12} className={cn('shrink-0', step.error ? 'text-red-400' : 'text-green-500')} />}
             {isCurrent && <Loader2 size={12} className="text-primary animate-spin shrink-0" />}
             {isFuture && <Circle size={12} className="text-muted-foreground shrink-0" />}
 
@@ -63,7 +63,7 @@ export function ExecutionTimeline() {
                 isFuture && 'text-muted-foreground'
               )}
             >
-              {step.label}
+              {step.label}{step.timestamp && <span className="ml-1 opacity-60">{step.timestamp.slice(11, 23)}</span>}
             </span>
           </motion.div>
         )

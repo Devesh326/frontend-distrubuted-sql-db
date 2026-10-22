@@ -14,7 +14,8 @@ export function PlaybackControls() {
   const setCinematicMode = useClusterStore((s) => s.setCinematicMode)
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1" title="Replay speed and camera movement affect the display only, not SQL execution.">
+      <span className="text-[10px] text-muted-foreground mr-1">Replay</span>
       {speeds.map((s) => (
         <button
           key={s.value}

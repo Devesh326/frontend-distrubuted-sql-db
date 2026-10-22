@@ -60,7 +60,7 @@ export function QueryHistory() {
                 {entry.query.split('\n')[0].slice(0, 40)}...
               </span>
               <span className="text-[10px] text-muted-foreground font-mono">
-                {(entry.duration / 1000).toFixed(1)}s
+                {entry.duration}ms
               </span>
             </motion.div>
           ))}

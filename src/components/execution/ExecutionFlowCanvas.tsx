@@ -22,14 +22,6 @@ const nodeTypes = {
 
 const NODE_WIDTH = 256
 const NODE_HEIGHT = 140
-const VERTICAL_GAP = 160
-
-const nodeIdMap: Record<string, string> = {
-  coordinator: 'coord-1',
-  leader: 'node-1',
-  replica1: 'node-2',
-  replica2: 'node-3',
-}
 
 function FlowContent() {
   const cluster = useClusterStore((s) => s.cluster)
@@ -37,14 +29,27 @@ function FlowContent() {
   const isExecuting = useClusterStore((s) => s.isExecuting)
   const packetTarget = useClusterStore((s) => s.packetTarget)
   const cameraTargetNode = useClusterStore((s) => s.cameraTargetNode)
-  const completionPhase = useClusterStore((s) => s.completionPhase)
   const cinematicMode = useClusterStore((s) => s.cinematicMode)
+  const executionCoordinatorId = useClusterStore(s => s.executionCoordinatorId)
+  const settings = useClusterStore(s => s.settings)
+  const connectionStatus = useClusterStore(s => s.connectionStatus)
+  const coordinator = useMemo(() => cluster.coordinators.find(node => node.id === executionCoordinatorId) || (executionCoordinatorId ? { id: executionCoordinatorId, name: `Coordinator ${executionCoordinatorId}`, address: '', port: 0, healthy: false } : cluster.coordinator), [cluster, executionCoordinatorId])
   const reactFlowInstance = useReactFlow()
+  const frameRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!frameRef.current) return
+    const observer = new ResizeObserver(() => {
+      if (!cinematicMode) void reactFlowInstance.fitView({ padding: 0.25, duration: 200 })
+    })
+    observer.observe(frameRef.current)
+    return () => observer.disconnect()
+  }, [reactFlowInstance, cinematicMode])
 
   const prevTargetRef = useRef<string | null>(null)
   const [packetPos, setPacketPos] = useState<{ x: number; y: number } | null>(null)
+  const packetPosRef = useRef<{ x: number; y: number } | null>(null)
   const [prevPacketPos, setPrevPacketPos] = useState<{ x: number; y: number } | null>(null)
-  const [trailPositions, setTrailPositions] = useState<{ x: number; y: number }[]>([])
 
   const { nodes, edges } = useMemo(() => {
     const n: Node[] = []
@@ -52,18 +57,18 @@ function FlowContent() {
 
     const isHighlighted = (id: string) => {
       if (!isExecuting || !highlightedNode) return false
-      return nodeIdMap[highlightedNode] === id
+      return highlightedNode === id
     }
     const isDimmed = (id: string) => {
       if (!isExecuting || !highlightedNode) return false
-      return nodeIdMap[highlightedNode] !== id
+      return highlightedNode !== id
     }
 
-    n.push({
-      id: cluster.coordinator.id,
+    if (coordinator.id) n.push({
+      id: coordinator.id,
       type: 'coordinator',
       position: { x: 0, y: 0 },
-      data: { coordinator: cluster.coordinator, isHighlighted: isHighlighted(cluster.coordinator.id), isDimmed: isDimmed(cluster.coordinator.id) },
+      data: { coordinator, isHighlighted: isHighlighted(coordinator.id), isDimmed: isDimmed(coordinator.id) },
     })
 
     cluster.nodes.forEach((node, i) => {
@@ -75,12 +80,12 @@ function FlowContent() {
         data: { node, isHighlighted: isHighlighted(node.id), isDimmed: isDimmed(node.id) },
       })
 
-      e.push({
-        id: `edge-${cluster.coordinator.id}-${node.id}`,
-        source: cluster.coordinator.id,
+      if (coordinator.id) e.push({
+        id: `edge-${coordinator.id}-${node.id}`,
+        source: coordinator.id,
         target: node.id,
         type: 'smoothstep',
-        animated: isExecuting && (nodeIdMap[highlightedNode || ''] === node.id || nodeIdMap[highlightedNode || ''] === cluster.coordinator.id),
+        animated: settings.packetAnimation && isExecuting && highlightedNode === node.id,
         style: {
           stroke: isHighlighted(node.id) ? 'hsl(142, 70%, 60%)' : isDimmed(node.id) ? 'hsl(240, 5%, 20%)' : node.isLeader ? 'hsl(142, 70%, 50%)' : 'hsl(240, 5%, 40%)',
           strokeWidth: isHighlighted(node.id) ? 3 : isDimmed(node.id) ? 0.8 : node.isLeader ? 2.5 : 1.5,
@@ -92,31 +97,10 @@ function FlowContent() {
         },
       })
 
-      if (node.isLeader) {
-        cluster.nodes.filter((o) => o.id !== node.id).forEach((replica) => {
-          e.push({
-            id: `edge-replication-${node.id}-${replica.id}`,
-            source: node.id,
-            target: replica.id,
-            type: 'smoothstep',
-            animated: isExecuting && (highlightedNode === 'replica1' || highlightedNode === 'replica2'),
-            style: {
-              stroke: isExecuting && (highlightedNode === 'replica1' || highlightedNode === 'replica2') ? 'hsl(142, 70%, 50%)' : 'hsl(240, 5%, 30%)',
-              strokeWidth: isExecuting && (highlightedNode === 'replica1' || highlightedNode === 'replica2') ? 2 : 1,
-              opacity: isExecuting && (highlightedNode === 'replica1' || highlightedNode === 'replica2') ? 0.6 : 0.15,
-              strokeDasharray: '4 4',
-            },
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: isExecuting && (highlightedNode === 'replica1' || highlightedNode === 'replica2') ? 'hsl(142, 70%, 50%)' : 'hsl(240, 5%, 30%)',
-            },
-          })
-        })
-      }
     })
 
     return { nodes: n, edges: e }
-  }, [cluster, highlightedNode, isExecuting])
+  }, [cluster, coordinator, highlightedNode, isExecuting, settings.packetAnimation])
 
   useEffect(() => {
     if (!cameraTargetNode || !reactFlowInstance) return
@@ -132,15 +116,21 @@ function FlowContent() {
   }, [cameraTargetNode, reactFlowInstance, cinematicMode])
 
   useEffect(() => {
-    if (!packetTarget || !reactFlowInstance) {
+    if (!packetTarget || !reactFlowInstance || !settings.packetAnimation) {
       setPacketPos(null)
       setPrevPacketPos(null)
+      packetPosRef.current = null
+      prevTargetRef.current = null
       return
     }
 
-    const nodeId = nodeIdMap[packetTarget]
-    const node = reactFlowInstance.getNodes().find((n) => n.id === nodeId)
-    if (!node) return
+    const node = reactFlowInstance.getNodes().find((n) => n.id === packetTarget)
+    if (!node) {
+      setPacketPos(null)
+      setPrevPacketPos(null)
+      packetPosRef.current = null
+      return
+    }
 
     const { x: vx, y: vy, zoom } = reactFlowInstance.getViewport()
     const screenX = (node.position.x + NODE_WIDTH / 2) * zoom + vx
@@ -149,17 +139,13 @@ function FlowContent() {
     const newPos = { x: screenX, y: screenY }
 
     if (prevTargetRef.current && prevTargetRef.current !== packetTarget) {
-      setPrevPacketPos(packetPos)
-      setTrailPositions((prev) => {
-        const updated = packetPos ? [...prev, packetPos] : prev
-        return updated.slice(-8)
-      })
-      setTimeout(() => setTrailPositions([]), 1500)
+      setPrevPacketPos(packetPosRef.current)
     }
 
     prevTargetRef.current = packetTarget
+    packetPosRef.current = newPos
     setPacketPos(newPos)
-  }, [packetTarget, reactFlowInstance])
+  }, [packetTarget, reactFlowInstance, settings.packetAnimation])
 
   const typeColors: Record<string, string> = {
     SELECT: '#22d3ee', INSERT: '#34d399', UPDATE: '#fbbf24',
@@ -173,14 +159,15 @@ function FlowContent() {
   const color = currentQueryType ? typeColors[currentQueryType] || '#22d3ee' : '#22d3ee'
 
   return (
-    <div className="relative w-full h-full">
+    <div ref={frameRef} className="relative w-full h-full">
+      <div className="absolute top-3 left-3 z-10 text-[10px] text-muted-foreground pointer-events-none bg-card/90 px-2 py-1 rounded">Recorded RPC observations · lines show possible targets{connectionStatus !== 'connected' && ' · topology is last known'}</div>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.4 }}
-        minZoom={0.3}
+        minZoom={0.15}
         maxZoom={2.5}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
@@ -188,7 +175,7 @@ function FlowContent() {
           style: { stroke: 'hsl(240, 5%, 40%)', strokeWidth: 1.5 },
         }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={28} size={1} color="hsl(240, 5%, 10%)" />
+        {settings.gridVisibility && <Background variant={BackgroundVariant.Dots} gap={28} size={1} color="hsl(240, 5%, 10%)" />}
         <Controls
           showInteractive={false}
           className="!bg-card !border-border !rounded-lg"

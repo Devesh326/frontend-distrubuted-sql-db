@@ -1,21 +1,51 @@
 import { create } from 'zustand'
+import * as api from '@/services/api'
+import { createSnapshotPoller } from '@/services/snapshotPoller'
+import { appendSample, isFresh } from '@/services/metricsData'
 import type {
   ClusterState, Metrics, SidebarView, LogEntry, SettingsState,
-  QueryType, ExecutionStep, HistoryEntry, QueuedQuery
+  QueryType, ExecutionStep, HistoryEntry, QueuedQuery, WsEvent,
+  MetricSample, ConnectionStatus, RecoverySnapshot,
 } from '@/types'
 
+interface NodeEventEntry {
+  id: string
+  timestamp: string
+  type: string
+  message: string
+}
+
 interface ClusterStore {
+ controlToken: string
+ setControlToken: (token: string) => void
+ powerPending: Record<string, boolean>
+ powerErrors: Record<string, string>
+ setNodePower: (id: string, action: 'start' | 'stop') => Promise<void>
   cluster: ClusterState
   metrics: Metrics
+  metricHistory: MetricSample[]
+  connectionStatus: ConnectionStatus
+  connectionError: string | null
+  snapshotObservedAt: number
+  stoppingNodes: Record<string, boolean>
+  stopErrors: Record<string, string>
+  checkFreshness: () => void
+  stopPolling: () => void
+  recovery: RecoverySnapshot | null
+  recoveryStatus: ConnectionStatus
+  recoveryError: string | null
+  recoveryReceivedAt: number
+  refreshRecovery: (force?: boolean) => Promise<void>
   sidebarView: SidebarView
   setSidebarView: (view: SidebarView) => void
 
   selectedNodeId: string | null
   setSelectedNodeId: (id: string | null) => void
   drawerOpen: boolean
+  drawerSession: number
   setDrawerOpen: (open: boolean) => void
-  drawerType: 'node' | 'coordinator' | null
-  setDrawerType: (type: 'node' | 'coordinator' | null) => void
+  drawerType: 'node' | 'coordinator' | 'metadata' | null
+  setDrawerType: (type: 'node' | 'coordinator' | 'metadata' | null) => void
 
   metricModalKey: string | null
   setMetricModalKey: (key: string | null) => void
@@ -59,62 +89,120 @@ interface ClusterStore {
   setCompletionPhase: (phase: 'none' | 'complete' | 'fading' | 'ready') => void
   cinematicMode: boolean
   setCinematicMode: (on: boolean) => void
-}
 
-const mockCluster: ClusterState = {
-  coordinator: { id: 'coord-1', name: 'Coordinator', port: 26257, health: 'healthy' },
-  nodes: [
-    { id: 'node-1', name: 'Neon-1', role: 'leader', port: 26258, cpu: 42, memory: 68, storage: 55, shardCount: 24, health: 'healthy', isLeader: true },
-    { id: 'node-2', name: 'Neon-2', role: 'replica', port: 26259, cpu: 38, memory: 45, storage: 52, shardCount: 18, health: 'healthy', isLeader: false },
-    { id: 'node-3', name: 'Neon-3', role: 'replica', port: 26260, cpu: 55, memory: 72, storage: 48, shardCount: 20, health: 'healthy', isLeader: false },
-  ],
-  activeLeader: 'node-1',
-  replicationFactor: 3,
-  totalNodes: 3,
-}
+  queryResult: Record<string, string>[] | null
+  queryError: string | null
+  setQueryResult: (rows: Record<string, string>[] | null) => void
+  lastQueryDurationMs: number
+  setLastQueryDurationMs: (ms: number) => void
+  lastTraceId: string | null
+  executionPhase: 'idle' | 'waiting' | 'replaying'
+  executionCoordinatorId: string | null
+  executionNotice: string | null
+  setLastTraceId: (id: string | null) => void
 
-const mockMetrics: Metrics = {
-  queryCount: 14283, averageLatency: 2.4, clusterHealth: 99.7,
-  replicationEvents: 156, activeConnections: 8, errorCount: 3,
-}
+  nodeEventLog: Record<string, NodeEventEntry[]>
+  lastPollTimestamp: number
 
-const initialLogs: LogEntry[] = [
-  { id: '1', timestamp: '10:00:00.000', message: 'Cluster initialized with 3 nodes', level: 'info' },
-  { id: '2', timestamp: '10:00:00.050', message: 'Leader elected: Neon-1 (node-1)', level: 'info' },
-  { id: '3', timestamp: '10:00:00.100', message: 'Replication factor set to 3', level: 'info' },
-  { id: '4', timestamp: '10:00:00.150', message: 'Health check passed — all nodes operational', level: 'info' },
-  { id: '5', timestamp: '10:00:01.000', message: 'Query received: SELECT * FROM users', level: 'info' },
-  { id: '6', timestamp: '10:00:01.010', message: 'Query routed to leader: Neon-1', level: 'debug' },
-  { id: '7', timestamp: '10:00:01.050', message: 'Table scan started on shard 4', level: 'debug' },
-  { id: '8', timestamp: '10:00:01.100', message: 'Replica Neon-2 synchronized', level: 'info' },
-  { id: '9', timestamp: '10:00:01.150', message: 'Replica Neon-3 synchronized', level: 'info' },
-  { id: '10', timestamp: '10:00:02.000', message: 'Heartbeat received from Neon-2', level: 'debug' },
-  { id: '11', timestamp: '10:00:02.500', message: 'Heartbeat received from Neon-3', level: 'debug' },
-  { id: '12', timestamp: '10:00:03.000', message: 'WAL flush completed on leader', level: 'debug' },
-]
+  processEvent: (evt: WsEvent) => void
+  init: () => Promise<void>
+  refreshCluster: () => Promise<void>
+  refreshMetrics: () => Promise<void>
+  stopNode: (nodeId: string) => Promise<void>
+}
 
 const defaultSettings: SettingsState = {
   animationSpeed: 1, packetAnimation: true, gridVisibility: true, leaderHighlight: true, autoLayout: false,
 }
 
-export const useClusterStore = create<ClusterStore>((set) => ({
-  cluster: mockCluster,
-  metrics: mockMetrics,
+const defaultCluster: ClusterState = {
+  coordinator: { id: '', name: 'Coordinator unavailable', address: '', port: 0, healthy: false },
+  coordinators: [],
+  nodes: [],
+  shards: [],
+  shardRaftDetail: [],
+  metadataCluster: null,
+  buckets: 0,
+}
+
+const defaultMetrics: Metrics = {
+  queryCount: null, averageLatency: null, clusterHealth: null, nodesAlive: 0, nodesTotal: 0, shardCount: 0, coordinatorId: '',
+}
+
+let logCounter = 0
+function makeLog(message: string, level: LogEntry['level'] = 'info'): LogEntry {
+  logCounter++
+  const d = new Date()
+  const ts = d.toTimeString().split(' ')[0] + '.' + String(d.getMilliseconds()).padStart(3, '0')
+  return { id: String(logCounter), timestamp: ts, message, level }
+}
+
+let eventIdCounter = 0
+
+function pushNodeEvent(nodeId: string, evt: WsEvent, existing: Record<string, NodeEventEntry[]>): Record<string, NodeEventEntry[]> {
+  eventIdCounter++
+  const entry: NodeEventEntry = {
+    id: `evt-${eventIdCounter}`,
+    timestamp: evt.timestamp || new Date().toISOString(),
+    type: evt.type,
+    message: evt.sql || evt.type,
+  }
+  const log = existing[nodeId] || []
+  const updated = [...log, entry].slice(-20)
+  return { ...existing, [nodeId]: updated }
+}
+
+export const useClusterStore = create<ClusterStore>((set, get) => ({
+  controlToken: '', setControlToken: token => set({controlToken: token}),
+  powerPending: {}, powerErrors: {},
+  setNodePower: async (id, action) => {
+   const state = get()
+   if (state.powerPending[id]) return
+   const blocked = !state.controlToken ? 'Enter the lab control token before sending a power command. No command was sent.' : state.recoveryStatus !== 'connected' ? 'Controller status is unavailable. No command was sent.' : !state.recovery?.experiments_enabled ? 'Power experiments are disabled. No command was sent.' : ''
+   if (blocked) { set(state => ({powerErrors: {...state.powerErrors, [id]: blocked}})); return }
+   set(state => ({powerPending: {...state.powerPending, [id]: true}, powerErrors: {...state.powerErrors, [id]: ''}}))
+   try {
+    await api.setNodePower(id, action, state.controlToken)
+    get().addLog(makeLog(`${id}: ${action} acknowledged; waiting for observed state.`, 'warn'))
+   } catch (error) {
+    set(state => ({powerErrors: {...state.powerErrors, [id]: error instanceof Error ? error.message : String(error)}}))
+   } finally {
+    await Promise.all([get().refreshRecovery(true), get().refreshCluster()])
+    set(state => ({powerPending: {...state.powerPending, [id]: false}}))
+   }
+  },
+  cluster: defaultCluster,
+  metrics: defaultMetrics,
+  metricHistory: [],
+  connectionStatus: 'loading',
+  connectionError: null,
+  snapshotObservedAt: 0,
+  stoppingNodes: {},
+  stopErrors: {},
+  recovery: null, recoveryStatus: 'loading', recoveryError: null, recoveryReceivedAt: 0,
+  refreshRecovery: (force = false) => { if (force) recoveryPoller.invalidate(); return recoveryPoller.refresh() },
+  stopPolling: () => { snapshotPoller.invalidate(); recoveryPoller.invalidate() },
+  checkFreshness: () => {
+    const state = get()
+    if (state.lastPollTimestamp && !isFresh(state.snapshotObservedAt, state.lastPollTimestamp, Date.now()) && state.connectionStatus !== 'stale') set({ connectionStatus: 'stale' })
+    if (state.recoveryReceivedAt && Date.now() - state.recoveryReceivedAt > 6000 && state.recoveryStatus !== 'stale') set({ recoveryStatus: 'stale' })
+  },
   sidebarView: 'cluster',
   setSidebarView: (view) => set({ sidebarView: view }),
 
   selectedNodeId: null,
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
   drawerOpen: false,
-  setDrawerOpen: (open) => set({ drawerOpen: open }),
+  drawerSession: 0,
+  setDrawerOpen: (open) => set(state => ({ drawerOpen: open, drawerSession: open ? state.drawerSession : state.drawerSession + 1 })),
   drawerType: null,
   setDrawerType: (type) => set({ drawerType: type }),
 
   metricModalKey: null,
   setMetricModalKey: (key) => set({ metricModalKey: key }),
 
-  logs: initialLogs,
-  addLog: (entry) => set((state) => ({ logs: [...state.logs, entry] })),
+  logs: [],
+  addLog: (entry) => set((state) => ({ logs: [...state.logs, entry].slice(-1000) })),
   clearLogs: () => set({ logs: [] }),
   logPaused: false,
   setLogPaused: (paused) => set({ logPaused: paused }),
@@ -152,4 +240,82 @@ export const useClusterStore = create<ClusterStore>((set) => ({
   setCompletionPhase: (phase) => set({ completionPhase: phase }),
   cinematicMode: false,
   setCinematicMode: (on) => set({ cinematicMode: on }),
+
+  queryResult: null,
+  queryError: null,
+  setQueryResult: (rows) => set({ queryResult: rows }),
+  lastQueryDurationMs: 0,
+  setLastQueryDurationMs: (ms) => set({ lastQueryDurationMs: ms }),
+  lastTraceId: null,
+  executionPhase: 'idle',
+  executionCoordinatorId: null,
+  executionNotice: null,
+  setLastTraceId: (id) => set({ lastTraceId: id }),
+
+  nodeEventLog: {},
+  lastPollTimestamp: 0,
+
+  processEvent: (evt: WsEvent) => {
+    const state = get()
+
+    // Always log
+    if (!state.logPaused) {
+      const level: LogEntry['level'] =
+        evt.type.includes('error') || evt.type.includes('dead') || evt.metadata?.error === true ? 'error' :
+        evt.type.includes('start') || evt.type.includes('elected') ? 'warn' : 'info'
+      const detail = evt.type === 'raft.leader.observed'
+        ? `shard ${evt.shard_id}: ${evt.metadata?.previous_leader || 'unknown'} → ${evt.metadata?.leader || 'not observed'} · term ${evt.metadata?.term || '?'} (storage reports)`
+        : evt.type === 'shard.routing.changed' ? `shard ${evt.shard_id}: metadata route → ${evt.node_id}` : evt.sql || ''
+      state.addLog(makeLog(`[${evt.type}] ${evt.node_id || evt.trace_id || ''} ${detail}`, level))
+    }
+
+    // Events are observations from one coordinator, not an authoritative snapshot.
+    if (evt.node_id) {
+      const nodeEventLog = pushNodeEvent(evt.node_id, evt, state.nodeEventLog)
+      set({ nodeEventLog })
+    }
+
+    /* Snapshot polling below owns health/topology updates. */
+    if (evt.type.startsWith('node.') || evt.type.startsWith('raft.') || evt.type.startsWith('shard.')) void get().refreshCluster()
+
+  },
+
+  init: () => snapshotPoller.refresh(),
+  refreshCluster: () => snapshotPoller.refresh(),
+  refreshMetrics: () => snapshotPoller.refresh(),
+
+  stopNode: async (nodeId: string) => {
+    if (get().connectionStatus !== 'connected' || get().stoppingNodes[nodeId]) return
+    set(state => ({ stoppingNodes: { ...state.stoppingNodes, [nodeId]: true }, stopErrors: { ...state.stopErrors, [nodeId]: '' } }))
+    try {
+      await api.stopNode(nodeId)
+      get().addLog(makeLog(`Shutdown request accepted for ${nodeId}; waiting for reported node health.`, 'warn'))
+      await get().refreshCluster()
+    } catch (err) {
+      set(state => ({ stopErrors: { ...state.stopErrors, [nodeId]: err instanceof Error ? err.message : String(err) } }))
+      get().addLog(makeLog(`Failed to stop node ${nodeId}: ${err}`, 'error'))
+    } finally {
+      set(state => ({ stoppingNodes: { ...state.stoppingNodes, [nodeId]: false } }))
+    }
+  },
 }))
+
+const snapshotPoller = createSnapshotPoller({
+  fetch: api.getSnapshot,
+  apply: snapshot => useClusterStore.setState(state => ({
+    cluster: snapshot.cluster, metrics: snapshot.metrics,
+    metricHistory: appendSample(state.metricHistory, snapshot.metrics, Date.now()),
+    snapshotObservedAt: snapshot.observedAt, lastPollTimestamp: Date.now(),
+    connectionStatus: 'connected', connectionError: null,
+  })),
+  failed: error => useClusterStore.setState(state => ({
+    connectionStatus: state.lastPollTimestamp ? 'stale' : 'unavailable',
+    connectionError: error instanceof Error ? error.message : String(error),
+  })),
+})
+
+const recoveryPoller = createSnapshotPoller({
+  fetch: api.getRecoverySnapshot,
+  apply: recovery => useClusterStore.setState({ recovery, recoveryStatus: 'connected', recoveryError: null, recoveryReceivedAt: Date.now() }),
+  failed: error => useClusterStore.setState(state => ({ recoveryStatus: state.recovery ? 'stale' : 'unavailable', recoveryError: error instanceof Error ? error.message : String(error) })),
+})

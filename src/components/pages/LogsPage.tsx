@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Trash2, Pause, Play, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -35,7 +35,7 @@ export function LogsPage() {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Terminal size={16} className="text-primary" />
-          <span className="text-sm font-semibold text-foreground">Cluster Logs</span>
+          <span className="text-sm font-semibold text-foreground" title="Events observed through one coordinator's WebSocket, plus this browser's actions. This is not a complete server log.">Observed Events</span>
           <span className="text-[10px] text-muted-foreground font-mono">{logs.length} entries</span>
         </div>
         <div className="flex items-center gap-2">

@@ -23,19 +23,19 @@ export function Sidebar() {
   const setSidebarView = useClusterStore((s) => s.setSidebarView)
 
   return (
-    <aside className="w-56 border-r border-border bg-sidebar flex flex-col shrink-0">
-      <div className="px-4 py-5 border-b border-border">
+    <aside className="w-14 md:w-56 border-r border-border bg-sidebar flex flex-col shrink-0">
+      <div className="px-3 md:px-4 py-5 border-b border-border">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
             <Database size={14} className="text-primary-foreground" />
           </div>
-          <span className="text-sm font-semibold tracking-tight text-foreground">
+          <span className="hidden md:inline text-sm font-semibold tracking-tight text-foreground">
             Distributed SQL
           </span>
         </div>
       </div>
 
-      <nav className="flex-1 flex flex-col gap-1 p-3">
+      <nav className="flex-1 flex flex-col gap-1 p-1.5 md:p-3">
         {navItems.map((item, i) => (
           <motion.div
             key={item.id}
@@ -46,16 +46,19 @@ export function Sidebar() {
             <Button
               variant={sidebarView === item.id ? 'sidebarActive' : 'sidebar'}
               size="default"
+              aria-label={item.label}
+              title={item.label}
+              className="justify-center px-2 md:justify-start md:px-4"
               onClick={() => setSidebarView(item.id)}
             >
               {item.icon}
-              {item.label}
+              <span className="hidden md:inline">{item.label}</span>
             </Button>
           </motion.div>
         ))}
       </nav>
 
-      <div className="p-3 border-t border-border">
+      <div className="hidden md:block p-3 border-t border-border">
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
           <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse-soft" />
           v1.0.0

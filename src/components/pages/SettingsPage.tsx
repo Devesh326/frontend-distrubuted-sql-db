@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion'
 import { Zap, Eye, Grid3X3, Navigation, Maximize2 } from 'lucide-react'
 import { useClusterStore } from '@/store/clusterStore'
-import type { SettingsState } from '@/types'
 
 interface SettingRowProps {
   icon: React.ReactNode
@@ -73,13 +72,13 @@ export function SettingsPage() {
     {
       icon: <Zap size={16} />,
       label: 'Animation Speed',
-      description: 'Controls the speed of all cluster animations',
+      description: 'Controls storage-card transition speed; no database effect',
       control: <Slider value={settings.animationSpeed} onChange={(v) => updateSetting('animationSpeed', v)} />,
     },
     {
       icon: <Eye size={16} />,
       label: 'Packet Animation',
-      description: 'Show animated packets between nodes',
+      description: 'Show packets during recorded query-event replay',
       control: (
         <Toggle value={settings.packetAnimation} onChange={(v) => updateSetting('packetAnimation', v)} />
       ),
@@ -117,7 +116,7 @@ export function SettingsPage() {
     >
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-foreground">Settings</h2>
-        <p className="text-[11px] text-muted-foreground mt-0.5">Configure playground behavior</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">Display preferences for this browser session. These do not change database configuration or execution speed.</p>
       </div>
       <div className="flex flex-col gap-2 max-w-lg">
         {settingsRows.map((row, i) => (

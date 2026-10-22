@@ -4,9 +4,8 @@ import {
   Activity,
   Gauge,
   HeartPulse,
-  Repeat,
+  Server,
   Wifi,
-  AlertTriangle,
 } from 'lucide-react'
 
 const metricConfig = [
@@ -21,42 +20,36 @@ const metricConfig = [
     key: 'averageLatency',
     label: 'Avg Latency',
     icon: <Gauge size={13} />,
-    format: (v: number) => `${v}ms`,
+    format: (v: number) => `${v.toFixed(1)}ms`,
     color: 'text-yellow-400',
   },
   {
     key: 'clusterHealth',
-    label: 'Health',
+    label: 'Storage Online',
     icon: <HeartPulse size={13} />,
-    format: (v: number) => `${v}%`,
+    format: (v: number) => `${v.toFixed(1)}%`,
     color: 'text-green-400',
   },
   {
-    key: 'replicationEvents',
-    label: 'Replication',
-    icon: <Repeat size={13} />,
-    format: (v: number) => v.toLocaleString(),
-    color: 'text-purple-400',
-  },
-  {
-    key: 'activeConnections',
-    label: 'Connections',
-    icon: <Wifi size={13} />,
-    format: (v: number) => v.toString(),
+    key: 'nodesAlive',
+    label: 'Nodes Alive',
+    icon: <Server size={13} />,
+    format: (v: number) => `${v}/${useClusterStore.getState().metrics.nodesTotal}`,
     color: 'text-cyan-400',
   },
   {
-    key: 'errorCount',
-    label: 'Errors',
-    icon: <AlertTriangle size={13} />,
-    format: (v: number) => v.toLocaleString(),
-    color: 'text-red-400',
+    key: 'shardCount',
+    label: 'Shards',
+    icon: <Wifi size={13} />,
+    format: (v: number) => v.toString(),
+    color: 'text-purple-400',
   },
 ]
 
 export function MetricsBar() {
   const metrics = useClusterStore((s) => s.metrics)
   const isExecuting = useClusterStore((s) => s.isExecuting)
+  const status = useClusterStore((s) => s.connectionStatus)
   const setMetricModalKey = useClusterStore((s) => s.setMetricModalKey)
 
   return (
@@ -71,9 +64,10 @@ export function MetricsBar() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06, duration: 0.3 }}
               onClick={() => setMetricModalKey(metric.key)}
+              title={metric.key === 'queryCount' || metric.key === 'averageLatency' ? `Measured on ${metrics.coordinatorId || 'unavailable coordinator'}; not cluster-wide` : 'Reported storage topology; not a quorum or query-readiness check'}
               className="flex-1 flex items-center justify-center gap-2 px-3 py-3 border-r border-border last:border-r-0 min-w-fit cursor-pointer hover:bg-muted/10 transition-colors relative"
             >
-              {(isExecuting && (metric.key === 'queryCount' || metric.key === 'replicationEvents')) && (
+              {(isExecuting && (metric.key === 'queryCount')) && (
                 <motion.span
                   className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary"
                   animate={{ scale: [1, 1.4, 1] }}
@@ -88,7 +82,7 @@ export function MetricsBar() {
                 animate={{ scale: 1, opacity: 1 }}
                 className={`text-xs font-semibold tabular-nums ${metric.color}`}
               >
-                {metric.format(value as number)}
+                {status === 'connected' && typeof value === 'number' ? metric.format(value) : '—'}
               </motion.span>
             </motion.div>
           )
