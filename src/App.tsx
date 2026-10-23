@@ -1,11 +1,9 @@
 import { useEffect } from 'react'
-import { ReactFlowProvider } from 'reactflow'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { MetricsBar } from '@/components/layout/MetricsBar'
-import { FlowCanvas } from '@/components/canvas/FlowCanvas'
-import { PlaygroundPage } from '@/components/pages/PlaygroundPage'
+import { ClusterWorkspace } from '@/components/pages/ClusterWorkspace'
 import { MetricsPage } from '@/components/pages/MetricsPage'
 import { LogsPage } from '@/components/pages/LogsPage'
 import { SettingsPage } from '@/components/pages/SettingsPage'
@@ -17,19 +15,14 @@ import { useClusterStore } from '@/store/clusterStore'
 import { connect as connectWs, disconnect as disconnectWs } from '@/services/ws'
 
 const pages: Record<string, React.FC> = {
-  cluster: () => (
-    <ReactFlowProvider>
-      <FlowCanvas />
-    </ReactFlowProvider>
-  ),
-  playground: PlaygroundPage,
   metrics: MetricsPage,
   logs: LogsPage,
   settings: SettingsPage,
 }
 
 function PageContent({ view }: { view: string }) {
-  const Page = pages[view] || pages.cluster
+  const Page = pages[view]
+  if (!Page) return null
 
   return (
     <AnimatePresence mode="wait">
@@ -49,6 +42,7 @@ function PageContent({ view }: { view: string }) {
 
 function App() {
   const sidebarView = useClusterStore((s) => s.sidebarView)
+  const workspaceVisible = sidebarView === 'cluster' || sidebarView === 'playground'
   const init = useClusterStore((s) => s.init)
   const refreshCluster = useClusterStore((s) => s.refreshCluster)
   const stopPolling = useClusterStore((s) => s.stopPolling)
@@ -80,7 +74,8 @@ function App() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex-1 min-w-0 relative">
-          <PageContent view={sidebarView} />
+          <div className={workspaceVisible ? 'absolute inset-0' : 'hidden'}><ClusterWorkspace/></div>
+          {!workspaceVisible && <PageContent view={sidebarView} />}
         </main>
       </div>
       <MetricsBar />

@@ -210,7 +210,7 @@ export const useClusterStore = create<ClusterStore>((set, get) => ({
   settings: defaultSettings,
   updateSetting: (key, value) => set((state) => ({ settings: { ...state.settings, [key]: value } })),
 
-  playgroundQuery: '',
+  playgroundQuery: 'SELECT * FROM users;',
   setPlaygroundQuery: (q) => set({ playgroundQuery: q }),
 
   cameraTargetNode: null,

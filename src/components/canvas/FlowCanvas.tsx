@@ -17,6 +17,9 @@ function FlowCanvasInner() {
   const recoveryReceivedAt = useClusterStore(s => s.recoveryReceivedAt)
   const settings = useClusterStore(s => s.settings)
   const status = useClusterStore(s => s.connectionStatus)
+  const highlightedNode = useClusterStore(s => s.highlightedNode)
+  const replaying = useClusterStore(s => s.executionPhase === 'replaying')
+  const step = useClusterStore(s => s.executionSteps[s.currentStepIndex])
   const cluster = useMemo(() => withRecoveryMembers(sourceCluster, recovery, status === 'connected', recoveryReceivedAt, Date.now()), [sourceCluster, recovery, status, recoveryReceivedAt])
   const select = useClusterStore(s => s.setSelectedNodeId)
   const open = useClusterStore(s => s.setDrawerOpen)
@@ -30,7 +33,10 @@ function FlowCanvasInner() {
     return () => observer.disconnect()
   }, [fitView])
   const hasMetadata = !!cluster.metadataCluster
-  const model = useMemo(() => buildTopology(cluster, settings.packetAnimation && status === 'connected'), [cluster, settings.packetAnimation, status])
+  const model = useMemo(() => {
+    const topology = buildTopology(cluster, settings.packetAnimation && status === 'connected')
+    return {...topology, nodes: topology.nodes.map(node => ({...node, data: {...node.data, isHighlighted: replaying && (node.id === highlightedNode || node.data.node?.id === highlightedNode)}}))}
+  }, [cluster, settings.packetAnimation, status, replaying, highlightedNode])
   const [nodes, setNodes, onNodesChange] = useNodesState(model.nodes)
   useEffect(() => {
     setNodes(current => {
@@ -60,6 +66,7 @@ function FlowCanvasInner() {
       <div className="absolute top-3 left-3 pointer-events-none text-[10px] text-muted-foreground bg-card/90 rounded px-2 py-1 max-w-[80%]">
         {status === 'connected' ? 'Reported topology · links show configured relationships, not live traffic' : 'Last known topology · current health is unknown'}
         {status === 'connected' && cluster.shards.map(shard => <div key={shard.id}>Shard {shard.id}: {shard.leader ? `leader ${shard.leader}` : 'no leader observed'}</div>)}
+        {replaying && step && <div className="text-primary mt-1">Query replay: {step.label}{highlightedNode ? ` · ${highlightedNode}` : ''}</div>}
       </div>
     </div>
   )

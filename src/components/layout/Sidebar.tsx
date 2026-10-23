@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion'
 import {
   Database,
-  Play,
   BarChart3,
   ScrollText,
   Settings,
@@ -11,8 +10,7 @@ import { useClusterStore } from '@/store/clusterStore'
 import type { SidebarView } from '@/types'
 
 const navItems: { id: SidebarView; label: string; icon: React.ReactNode }[] = [
-  { id: 'cluster', label: 'Cluster', icon: <Database size={18} /> },
-  { id: 'playground', label: 'Playground', icon: <Play size={18} /> },
+  { id: 'cluster', label: 'Playground', icon: <Database size={18} /> },
   { id: 'metrics', label: 'Metrics', icon: <BarChart3 size={18} /> },
   { id: 'logs', label: 'Logs', icon: <ScrollText size={18} /> },
   { id: 'settings', label: 'Settings', icon: <Settings size={18} /> },

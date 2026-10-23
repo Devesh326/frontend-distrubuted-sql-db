@@ -68,7 +68,7 @@ function CollapsibleSection({ icon: Icon, label, defaultOpen = true, children }:
   )
 }
 
-function ResultTable({ rows }: { rows: Record<string, string>[] }) {
+export function ResultTable({ rows }: { rows: Record<string, string>[] }) {
   if (!rows || rows.length === 0) {
     return <p className="text-[10px] text-muted-foreground italic py-2">No rows returned</p>
   }

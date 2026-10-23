@@ -7,14 +7,14 @@ const speeds = [
   { label: '⚡ Fast', value: 2 },
 ]
 
-export function PlaybackControls() {
+export function PlaybackControls({showCinematic = true}: {showCinematic?: boolean}) {
   const simulationSpeed = useClusterStore((s) => s.simulationSpeed)
   const setSimulationSpeed = useClusterStore((s) => s.setSimulationSpeed)
   const cinematicMode = useClusterStore((s) => s.cinematicMode)
   const setCinematicMode = useClusterStore((s) => s.setCinematicMode)
 
   return (
-    <div className="flex items-center gap-1" title="Replay speed and camera movement affect the display only, not SQL execution.">
+    <div className="flex items-center gap-1" title="Replay controls affect the display only, not SQL execution.">
       <span className="text-[10px] text-muted-foreground mr-1">Replay</span>
       {speeds.map((s) => (
         <button
@@ -33,7 +33,7 @@ export function PlaybackControls() {
           {s.label}
         </button>
       ))}
-      <div className="w-px h-4 bg-border mx-0.5" />
+      {showCinematic && <><div className="w-px h-4 bg-border mx-0.5" />
       <button
         onClick={() => setCinematicMode(!cinematicMode)}
         className={cn(
@@ -44,7 +44,7 @@ export function PlaybackControls() {
         )}
       >
         🎬 Cinematic
-      </button>
+      </button></>}
     </div>
   )
 }
